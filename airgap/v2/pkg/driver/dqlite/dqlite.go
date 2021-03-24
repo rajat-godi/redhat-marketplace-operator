@@ -5,8 +5,6 @@ import (
 	"strconv"
 	"strings"
 
-	//"github.com/redhat-marketplace/redhat-marketplace-operator/airgap/v2/pkg/driver/dqlite"
-
 	_ "github.com/mattn/go-sqlite3"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -46,15 +44,13 @@ func (wrapper Dialector) Initialize(db *gorm.DB) (err error) {
 	if wrapper.dialector.Conn != nil {
 		db.ConnPool = wrapper.dialector.Conn
 	} else {
-		//db.ConnPool, err = sql.Open(dialector.DriverName, dialector.DSN)
 		db.ConnPool = wrapper.db
-		return nil
 	}
 
 	for k, v := range wrapper.dialector.ClauseBuilders() {
 		db.ClauseBuilders[k] = v
 	}
-	return
+	return nil
 }
 
 func (wrapper Dialector) ClauseBuilders() map[string]clause.ClauseBuilder {

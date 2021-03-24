@@ -14,6 +14,7 @@ import (
 )
 
 func main() {
+	var name string
 	var api string
 	var db string
 	var join *[]string
@@ -25,7 +26,8 @@ func main() {
 		Short: "Command to start up grpc server and database",
 		Long:  `Command to start up grpc server and establish a database connection`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			d, err := database.InitDB(dir, db, join, verbose)
+			name = "airgap"
+			d, err := database.InitDB(name, dir, db, *join, verbose)
 			if err != nil {
 				return err
 			}
@@ -43,7 +45,7 @@ func main() {
 				}
 			}()
 
-			ch := make(chan os.Signal)
+			ch := make(chan os.Signal, 1)
 			signal.Notify(ch, unix.SIGINT)
 			signal.Notify(ch, unix.SIGQUIT)
 			signal.Notify(ch, unix.SIGTERM)

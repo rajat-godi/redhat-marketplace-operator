@@ -27,9 +27,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/redhat-marketplace/redhat-marketplace-operator/airgap/v2/pkg/driver/dqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/schema"
 )
-
-//Type declarations
 
 type Database struct {
 	DB       *gorm.DB //GORM connection. Other packages can only access this
@@ -40,15 +39,19 @@ type Database struct {
 /*
 Initialize the GORM onnection and return fully populated Database object
 */
-func InitDB(name string, dir string, url string, cluster []string, verbose bool) (*Database, error) {
-	database, err := initDqlite(name, dir, url, cluster, verbose)
+func InitDB(name string, dir string, url string, join []string, verbose bool) (*Database, error) {
+	database, err := initDqlite(name, dir, url, join, verbose)
 	if err != nil {
 		log.Printf("Error, during initialization of Dqlite Database: %v", err)
 		return nil, err
 	}
 
 	dqliteDialector := dqlite.Open(database.dqliteDB)
-	database.DB, err = gorm.Open(dqliteDialector, &gorm.Config{})
+	database.DB, err = gorm.Open(dqliteDialector, &gorm.Config{
+		NamingStrategy: schema.NamingStrategy{
+			SingularTable: true, // use singular table name, table for `User` would be `user` with this option enabled
+		},
+	})
 	if err != nil {
 		log.Printf("Error during GORM open")
 		return nil, err
@@ -61,7 +64,7 @@ func InitDB(name string, dir string, url string, cluster []string, verbose bool)
 Initialize the underlying dqlite database and populate a *Database object with the dqlite connection and app.
 Which will be used later for closing the connection
 */
-func initDqlite(name string, dir string, url string, cluster []string, verbose bool) (*Database, error) {
+func initDqlite(name string, dir string, url string, join []string, verbose bool) (*Database, error) {
 	dir = filepath.Join(dir, url)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, errors.Wrapf(err, "can't create %s", dir)
@@ -73,7 +76,7 @@ func initDqlite(name string, dir string, url string, cluster []string, verbose b
 		log.Printf(fmt.Sprintf("%s: %s\n", l.String(), format), a...)
 	}
 
-	app, err := app.New(dir, app.WithAddress(url), app.WithCluster(cluster), app.WithLogFunc(logFunc))
+	app, err := app.New(dir, app.WithAddress(url), app.WithCluster(join), app.WithLogFunc(logFunc))
 	if err != nil {
 		return nil, err
 	}
