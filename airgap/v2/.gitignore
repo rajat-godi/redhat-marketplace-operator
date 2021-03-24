@@ -14,8 +14,8 @@
 Icon
 
 #Database and local test code
-airgap/v2/db/
-airgap/v2/test/
+db/
+test/
 
 # Thumbnails
 ._*
