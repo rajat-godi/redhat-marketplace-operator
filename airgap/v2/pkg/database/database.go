@@ -25,14 +25,43 @@ import (
 	"github.com/canonical/go-dqlite/app"
 	"github.com/canonical/go-dqlite/client"
 	"github.com/pkg/errors"
+	"github.com/redhat-marketplace/redhat-marketplace-operator/airgap/v2/pkg/driver/dqlite"
+	"gorm.io/gorm"
 )
 
+//Type declarations
+
 type Database struct {
-	db  *sql.DB
-	app *app.App
+	DB       *gorm.DB //GORM connection. Other packages can only access this
+	dqliteDB *sql.DB  //The underlying connection to dqlite of type *sql.DB
+	app      *app.App //Data used to set up the nodes in dqlite
 }
 
-func InitDB(dir string, url string, join *[]string, verbose bool) (*Database, error) {
+/*
+Initialize the GORM onnection and return fully populated Database object
+*/
+func InitDB(name string, dir string, url string, cluster []string, verbose bool) (*Database, error) {
+	database, err := initDqlite(name, dir, url, cluster, verbose)
+	if err != nil {
+		log.Printf("Error, during initialization of Dqlite Database: %v", err)
+		return nil, err
+	}
+
+	dqliteDialector := dqlite.Open(database.dqliteDB)
+	database.DB, err = gorm.Open(dqliteDialector, &gorm.Config{})
+	if err != nil {
+		log.Printf("Error during GORM open")
+		return nil, err
+	}
+
+	return database, err
+}
+
+/*
+Initialize the underlying dqlite database and populate a *Database object with the dqlite connection and app.
+Which will be used later for closing the connection
+*/
+func initDqlite(name string, dir string, url string, cluster []string, verbose bool) (*Database, error) {
 	dir = filepath.Join(dir, url)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, errors.Wrapf(err, "can't create %s", dir)
@@ -44,7 +73,7 @@ func InitDB(dir string, url string, join *[]string, verbose bool) (*Database, er
 		log.Printf(fmt.Sprintf("%s: %s\n", l.String(), format), a...)
 	}
 
-	app, err := app.New(dir, app.WithAddress(url), app.WithCluster(*join), app.WithLogFunc(logFunc))
+	app, err := app.New(dir, app.WithAddress(url), app.WithCluster(cluster), app.WithLogFunc(logFunc))
 	if err != nil {
 		return nil, err
 	}
@@ -53,17 +82,20 @@ func InitDB(dir string, url string, join *[]string, verbose bool) (*Database, er
 		return nil, err
 	}
 
-	db, err := app.Open(context.Background(), "database")
+	conn, err := app.Open(context.Background(), name)
 	if err != nil {
 		return nil, err
 	}
 
-	return &Database{db: db, app: app}, db.Ping()
+	return &Database{dqliteDB: conn, app: app}, conn.Ping()
 }
 
+/*
+Close connection to the database, also handsover the leadership to another node running dqlite
+*/
 func (d *Database) Close() {
 	if d != nil {
-		d.db.Close()
+		d.dqliteDB.Close()
 		d.app.Handover(context.Background())
 		d.app.Close()
 	}
