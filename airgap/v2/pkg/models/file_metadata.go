@@ -14,9 +14,19 @@
 
 package models
 
+import (
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+)
+
 type FileMetadata struct {
 	ID         string `gorm:"primaryKey"`
 	MetadataID string
 	Key        string `gorm:"index"`
 	Value      string
+}
+
+func (fm *FileMetadata) BeforeCreate(tx *gorm.DB) (err error) {
+	fm.ID = uuid.NewString()
+	return
 }

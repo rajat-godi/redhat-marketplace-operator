@@ -14,6 +14,11 @@
 
 package models
 
+import (
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+)
+
 type Metadata struct {
 	ID                  string `gorm:"primaryKey"`
 	ProvidedId          string
@@ -25,6 +30,11 @@ type Metadata struct {
 	CreatedAt           int64
 	DeletedAt           int64
 	FileID              string
-	File                File `gorm:"foreignKey:ID"`
+	File                File
 	FileMetadata        []FileMetadata
+}
+
+func (m *Metadata) BeforeCreate(tx *gorm.DB) (err error) {
+	m.ID = uuid.NewString()
+	return
 }
