@@ -14,9 +14,9 @@
 
 package models
 
-type File_Metadata struct {
-	ID       string   `gorm:"primaryKey"`
-	Metadata Metadata `gorm:"foreignKey:ID"`
-	Key      string   `gorm:"index"`
-	Value    string
+type FileMetadata struct {
+	ID         string `gorm:"primaryKey"`
+	MetadataID string
+	Key        string `gorm:"index"`
+	Value      string
 }

@@ -34,11 +34,16 @@ func main() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name = "airgap"
 			d, err := database.InitDB(name, dir, db, join, verbose)
-
 			if err != nil {
 				return err
 			}
-
+			// Creating db models
+			if err := d.CreateModels(); err != nil {
+				log.Error(err, "During Migration")
+				return err
+			}
+			fmt.Println("Success: Migration completed")
+			_ = d.CrudTest()
 			lis, err := net.Listen("tcp", api)
 			if err != nil {
 				return err

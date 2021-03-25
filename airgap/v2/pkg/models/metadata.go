@@ -18,11 +18,13 @@ type Metadata struct {
 	ID                  string `gorm:"primaryKey"`
 	ProvidedId          string
 	ProvidedName        string
-	Size                uint
+	Size                uint32
 	Compression         bool
 	CompressionType     string
 	CleanTombstoneSetAt int64
 	CreatedAt           int64
 	DeletedAt           int64
+	FileID              string
 	File                File `gorm:"foreignKey:ID"`
+	FileMetadata        []FileMetadata
 }

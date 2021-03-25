@@ -27,6 +27,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 	"github.com/redhat-marketplace/redhat-marketplace-operator/airgap/v2/pkg/driver/dqlite"
+	"github.com/redhat-marketplace/redhat-marketplace-operator/airgap/v2/pkg/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
 )
@@ -98,4 +99,74 @@ func (d *Database) Close() {
 		d.app.Handover(context.Background())
 		d.app.Close()
 	}
+}
+
+/*
+Creates the models defined in pkg/models and returns an error, if it fails.
+This function must be called after the struct Database has been fully populated
+*/
+func (d *Database) CreateModels() error {
+	var err error
+
+	//Check if gorm.DB is populated
+	if d.DB == nil {
+		errors.New("GORM connection has not initialised: Connection of type *grom.DB is nil")
+	}
+
+	//Create models
+	err = d.DB.AutoMigrate(&models.FileMetadata{})
+	if err != nil {
+		log.Printf("Error during creation of File Metadata Model: %v", err)
+		return err
+	}
+
+	err = d.DB.AutoMigrate(&models.File{})
+	if err != nil {
+		log.Printf("Error during creation of File Model: %v", err)
+		return err
+	}
+	fmt.Println(models.Metadata{})
+	err = d.DB.AutoMigrate(&models.Metadata{})
+	if err != nil {
+		log.Printf("Error during creation of Metadata Model: %v", err)
+		return err
+	}
+
+	return nil
+}
+
+/*
+function must accept file information for save. For this, certain things are necessary.
+1. Metadata must be in the form of json. So, a json decoder.
+2. Provided name
+3. Provided id
+4. Size
+5. Compression
+6. CompressionType
+7. CleanTombstoneSetAt
+	For this, there is a grace period after which the tombstone can be deleted. This must be set at the time of upload.
+	Basically, 12 hrs + curren time.
+8. Created at (Must be obtained from file itself)
+9. Deleted at (Must be entered after the file is deleted. This required a new cli and an executable query)
+(must be unique)
+
+Need.
+1. Current time in posix form.
+2. Posix converter etc.
+
+*/
+
+func (d *Database) CrudTest() error {
+	file := models.File{ID: "file1", Content: []byte("Hippity Poppity!")}
+	fileMetadata := models.FileMetadata{ID: "file_metadata1", Key: "type", Value: "Magic damage"}
+	metadata := models.Metadata{ID: "metadata1", ProvidedId: "123hft", ProvidedName: "dummy", Size: 10, Compression: false, CompressionType: "We don't do compression", CleanTombstoneSetAt: 1000, CreatedAt: 1000, DeletedAt: 0, File: file, FileMetadata: []models.FileMetadata{fileMetadata}}
+
+	d.DB.Create(&metadata)
+
+	var db_metadata models.Metadata
+
+	d.DB.Preload("File").Preload("FileMetadata").First(&db_metadata)
+	fmt.Println(db_metadata)
+
+	return nil
 }
