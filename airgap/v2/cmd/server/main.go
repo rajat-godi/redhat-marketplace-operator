@@ -32,13 +32,27 @@ func main() {
 		Short: "Command to start up grpc server and database",
 		Long:  `Command to start up grpc server and establish a database connection`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name = "airgap"
-			d, err := database.InitDB(name, dir, db, join, verbose)
 
+			cfg := &database.DatabaseConfig{
+				Name:    "airgap",
+				Dir:     dir,
+				Url:     db,
+				Join:    join,
+				Verbose: verbose,
+				Log:     log,
+			}
+
+			d, err := cfg.InitDB()
 			if err != nil {
 				return err
 			}
-
+			// Creating db models
+			if err := d.CreateModels(); err != nil {
+				log.Error(err, "During Migration")
+				return err
+			}
+			fmt.Println("Success: Migration completed")
+			_ = d.CrudTest()
 			lis, err := net.Listen("tcp", api)
 			if err != nil {
 				return err
