@@ -15,97 +15,36 @@
 package database
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
-	"log"
-	"os"
-	"path/filepath"
-	"time"
+	"strings"
 
-	"github.com/canonical/go-dqlite/app"
-	"github.com/canonical/go-dqlite/client"
 	"github.com/go-logr/logr"
-	"github.com/pkg/errors"
 	v1 "github.com/redhat-marketplace/redhat-marketplace-operator/airgap/v2/apis/model/v1"
-	"github.com/redhat-marketplace/redhat-marketplace-operator/airgap/v2/pkg/driver/dqlite"
 	"github.com/redhat-marketplace/redhat-marketplace-operator/airgap/v2/pkg/models"
 	"gorm.io/gorm"
-	"gorm.io/gorm/schema"
 )
 
+type File interface {
+	SaveFile(finfo *v1.FileInfo, bs []byte) error
+}
+
 type Database struct {
-	DB       *gorm.DB
-	dqliteDB *sql.DB
-	app      *app.App
-	Log      logr.Logger
-}
-
-type DatabaseConfig struct {
-	Name    string
-	Dir     string
-	Url     string
-	Join    *[]string
-	Verbose bool
-	Log     logr.Logger
-}
-
-// Initialize the GORM connection and return connected struct
-func (dc *DatabaseConfig) InitDB() (*Database, error) {
-	database, err := dc.initDqlite()
-	if err != nil {
-		log.Printf("Error, during initialization of Dqlite Database: %v", err)
-		return nil, err
-	}
-
-	dqliteDialector := dqlite.Open(database.dqliteDB)
-	database.DB, err = gorm.Open(dqliteDialector, &gorm.Config{
-		NamingStrategy: schema.NamingStrategy{
-			SingularTable: true, // use singular table name, table for `User` would be `user` with this option enabled
-		},
-	})
-	if err != nil {
-		log.Printf("Error during GORM open")
-		return nil, err
-	}
-
-	// Auto migrate models
-	//database.DB.AutoMigrate(&models.File{}, &models.FileMetadata{}, &models.Metadata{})
-	database.Log = dc.Log
-	return database, err
-}
-
-// Initialize the underlying dqlite database and populate a *Database object with the dqlite connection and app
-func (dc *DatabaseConfig) initDqlite() (*Database, error) {
-	dc.Dir = filepath.Join(dc.Dir, dc.Url)
-	if err := os.MkdirAll(dc.Dir, 0755); err != nil {
-		return nil, errors.Wrapf(err, "can't create %s", dc.Dir)
-	}
-	logFunc := func(l client.LogLevel, format string, a ...interface{}) {
-		if !dc.Verbose {
-			return
-		}
-		log.Printf(fmt.Sprintf("%s: %s\n", l.String(), format), a...)
-	}
-
-	app, err := app.New(dc.Dir, app.WithAddress(dc.Url), app.WithCluster(*dc.Join), app.WithLogFunc(logFunc))
-	if err != nil {
-		return nil, err
-	}
-
-	if err := app.Ready(context.Background()); err != nil {
-		return nil, err
-	}
-
-	conn, err := app.Open(context.Background(), dc.Name)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Database{dqliteDB: conn, app: app}, conn.Ping()
+	DB    *gorm.DB
+	SqlDB *sql.DB
+	Log   logr.Logger
 }
 
 func (d *Database) SaveFile(finfo *v1.FileInfo, bs []byte) error {
+	// Validating input data
+	if finfo == nil || bs == nil {
+		return fmt.Errorf("nil arguments received: finfo: %v bs: %v", finfo, bs)
+	} else if finfo.GetFileId() == nil {
+		return fmt.Errorf("file id struct is nil")
+	} else if len(strings.TrimSpace(finfo.GetFileId().GetId())) == 0 && len(strings.TrimSpace(finfo.GetFileId().GetName())) == 0 {
+		return fmt.Errorf("file id/name is blank")
+	}
+
 	// Create a slice of file metadata models
 	var fms []models.FileMetadata
 	m := finfo.GetMetadata()
@@ -136,78 +75,5 @@ func (d *Database) SaveFile(finfo *v1.FileInfo, bs []byte) error {
 	}
 
 	d.Log.Info(fmt.Sprintf("File of size: %v saved with id: %v", metadata.Size, metadata.FileID))
-	return nil
-}
-
-// Close connection to the database and perform context handover
-func (d *Database) Close() {
-	if d != nil {
-		d.Log.Info("Attempting graceful shutdown and handover")
-		d.dqliteDB.Close()
-		d.app.Handover(context.Background())
-		d.app.Close()
-	}
-}
-
-/*
-Creates the models defined in pkg/models and returns an error, if it fails.
-This function must be called after the struct Database has been fully populated
-
-It checks for a leader, only theelader can perform the automigrate.
-*/
-func (d *Database) CreateModels(ctx context.Context) error {
-	var err error
-	//Code to find the leader
-	ctx, cancel := context.WithTimeout(ctx, time.Minute)
-	defer cancel()
-	cli, err := d.app.Leader(ctx)
-	if err != nil {
-		d.Log.Error(err, "Error: Could not find leader for automigrate")
-		return err
-	}
-	defer cli.Close()
-
-	d.Log.Info("Verifying leadership before automigrate")
-
-	var leader *client.NodeInfo
-	for leader == nil {
-		leader, err = cli.Leader(ctx)
-		if err != nil {
-			d.Log.Error(err, "Error: Could not find leader for automigrate, Leader address")
-			return err
-		}
-	}
-	d.Log.Info("Leader has been been found")
-	if leader.Address != d.app.Address() {
-		return nil
-	}
-	d.Log.Info("Leaderhsip verified, initiating automigrate")
-	//Check if gorm.DB is populated
-	if d.DB == nil {
-		errors.New("GORM connection has not initialised: Connection of type *grom.DB is nil")
-	}
-
-	//Create models
-	err = d.DB.AutoMigrate(&models.FileMetadata{}, &models.File{}, &models.Metadata{})
-	if err != nil {
-		log.Printf("Error during creation of Models: %v", err)
-		return err
-	}
-
-	return nil
-}
-
-func (d *Database) CrudTest() error {
-	file := models.File{ID: "file1", Content: []byte("Hippity Poppity!")}
-	fileMetadata := models.FileMetadata{ID: "file_metadata1", Key: "type", Value: "Magic damage"}
-	metadata := models.Metadata{ID: "metadata1", ProvidedId: "123hft", ProvidedName: "dummy", Size: 10, Compression: false, CompressionType: "We don't do compression", CleanTombstoneSetAt: 1000, CreatedAt: 1000, DeletedAt: 0, File: file, FileMetadata: []models.FileMetadata{fileMetadata}}
-
-	d.DB.Create(&metadata)
-
-	var db_metadata models.Metadata
-
-	d.DB.Preload("File").Preload("FileMetadata").First(&db_metadata)
-	fmt.Println(db_metadata)
-
 	return nil
 }
