@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -20,7 +21,6 @@ import (
 var log logr.Logger
 
 func main() {
-	var name string
 	var api string
 	var db string
 	var join *[]string
@@ -47,7 +47,7 @@ func main() {
 				return err
 			}
 			// Creating db models
-			if err := d.CreateModels(); err != nil {
+			if err := d.CreateModels(context.Background()); err != nil {
 				log.Error(err, "During Migration")
 				return err
 			}

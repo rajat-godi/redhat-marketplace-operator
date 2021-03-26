@@ -51,7 +51,6 @@ func (s *Server) UploadFile(stream fileserver.FileServer_UploadFileServer) error
 					fmt.Sprintf("Failed to save file in database: %v", err),
 				)
 			}
-
 			// Prepare response on save and close stream
 			res := &fileserver.UploadFileResponse{
 				FileId: fid,

@@ -21,6 +21,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/canonical/go-dqlite/app"
 	"github.com/canonical/go-dqlite/client"
@@ -69,7 +70,7 @@ func (dc *DatabaseConfig) InitDB() (*Database, error) {
 	}
 
 	// Auto migrate models
-	database.DB.AutoMigrate(&models.File{}, &models.FileMetadata{}, &models.Metadata{})
+	//database.DB.AutoMigrate(&models.File{}, &models.FileMetadata{}, &models.Metadata{})
 	database.Log = dc.Log
 	return database, err
 }
@@ -151,57 +152,50 @@ func (d *Database) Close() {
 /*
 Creates the models defined in pkg/models and returns an error, if it fails.
 This function must be called after the struct Database has been fully populated
-*/
-func (d *Database) CreateModels() error {
-	var err error
 
+It checks for a leader, only theelader can perform the automigrate.
+*/
+func (d *Database) CreateModels(ctx context.Context) error {
+	var err error
+	//Code to find the leader
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	cli, err := d.app.Leader(ctx)
+	if err != nil {
+		d.Log.Error(err, "Error: Could not find leader for automigrate")
+		return err
+	}
+	defer cli.Close()
+
+	d.Log.Info("Verifying leadership before automigrate")
+
+	var leader *client.NodeInfo
+	for leader == nil {
+		leader, err = cli.Leader(ctx)
+		if err != nil {
+			d.Log.Error(err, "Error: Could not find leader for automigrate, Leader address")
+			return err
+		}
+	}
+	d.Log.Info("Leader has been been found")
+	if leader.Address != d.app.Address() {
+		return nil
+	}
+	d.Log.Info("Leaderhsip verified, initiating automigrate")
 	//Check if gorm.DB is populated
 	if d.DB == nil {
 		errors.New("GORM connection has not initialised: Connection of type *grom.DB is nil")
 	}
 
 	//Create models
-	err = d.DB.AutoMigrate(&models.FileMetadata{})
+	err = d.DB.AutoMigrate(&models.FileMetadata{}, &models.File{}, &models.Metadata{})
 	if err != nil {
-		log.Printf("Error during creation of File Metadata Model: %v", err)
-		return err
-	}
-
-	err = d.DB.AutoMigrate(&models.File{})
-	if err != nil {
-		log.Printf("Error during creation of File Model: %v", err)
-		return err
-	}
-	fmt.Println(models.Metadata{})
-	err = d.DB.AutoMigrate(&models.Metadata{})
-	if err != nil {
-		log.Printf("Error during creation of Metadata Model: %v", err)
+		log.Printf("Error during creation of Models: %v", err)
 		return err
 	}
 
 	return nil
 }
-
-/*
-function must accept file information for save. For this, certain things are necessary.
-1. Metadata must be in the form of json. So, a json decoder.
-2. Provided name
-3. Provided id
-4. Size
-5. Compression
-6. CompressionType
-7. CleanTombstoneSetAt
-	For this, there is a grace period after which the tombstone can be deleted. This must be set at the time of upload.
-	Basically, 12 hrs + curren time.
-8. Created at (Must be obtained from file itself)
-9. Deleted at (Must be entered after the file is deleted. This required a new cli and an executable query)
-(must be unique)
-
-Need.
-1. Current time in posix form.
-2. Posix converter etc.
-
-*/
 
 func (d *Database) CrudTest() error {
 	file := models.File{ID: "file1", Content: []byte("Hippity Poppity!")}
